@@ -18,7 +18,7 @@
             color: #333;
         }
         #sidebar {
-            width: 320px;
+            width: 340px;
             background: #f8f9fa;
             border-right: 1px solid #dee2e6;
             padding: 20px;
@@ -44,7 +44,7 @@
         }
         .legend {
             background: white;
-            padding: 10px;
+            padding: 12px;
             border-radius: 6px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.2);
             margin-top: 15px;
@@ -53,13 +53,14 @@
         .legend-item {
             display: flex;
             align-items: center;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
         .legend-color {
-            width: 20px;
+            width: 24px;
             height: 4px;
             display: inline-block;
             margin-right: 8px;
+            border-radius: 2px;
         }
         #loading {
             font-weight: bold;
@@ -80,17 +81,20 @@
     <div id="sidebar">
         <div>
             <h1>Ciclabili Verona</h1>
-            <p>Mappa interattiva delle infrastrutture ciclabili della città. I dati sono estratti in tempo reale da <strong>OpenStreetMap</strong>.</p>
+            <p>Mappa interattiva delle infrastrutture ciclabili di Verona aggiornata in tempo reale da <strong>OpenStreetMap</strong>.</p>
             
-            <div id="loading">Caricamento dati da OpenStreetMap...</div>
+            <div id="loading">Caricamento infrastrutture...</div>
 
             <div class="legend">
                 <strong>Legenda Infrastrutture</strong>
-                <div class="legend-item" style="margin-top: 8px;">
-                    <span class="legend-color" style="background: #27ae60;"></span> Pista Ciclabile / Corsia
+                <div class="legend-item" style="margin-top: 10px;">
+                    <span class="legend-color" style="background: #27ae60;"></span> Pista ciclabile (sede propria)
                 </div>
                 <div class="legend-item">
-                    <span class="legend-color" style="background: #2980b9;"></span> Percorso promiscuo / Altro
+                    <span class="legend-color" style="background: #e67e22;"></span> Corsia ciclabile su strada
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #8e44ad;"></span> Percorso ciclopedonale
                 </div>
             </div>
         </div>
@@ -102,7 +106,7 @@
 
     <div id="map"></div>
 
-    <!-- Inclusione Leaflet JS e libreria di conversione OSM -> GeoJSON -->
+    <!-- Inclusione Leaflet JS e libreria OSMtoGeoJSON -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
 
@@ -116,14 +120,15 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // 3. Query Overpass ottimizzata passata via GET a un server mirror affidabile
+        // 3. Query Overpass estesa per catturare piste, corsie e percorsi ciclopedonali
         const query = `
             [out:json][timeout:25];
             (
-              way["highway"~"cycleway"](45.38,10.90,45.49,11.05);
+              way["highway"="cycleway"](45.38,10.90,45.49,11.05);
               way["cycleway"](45.38,10.90,45.49,11.05);
               way["cycleway:left"](45.38,10.90,45.49,11.05);
               way["cycleway:right"](45.38,10.90,45.49,11.05);
+              way["highway"~"path|footway"]["bicycle"~"yes|designated"](45.38,10.90,45.49,11.05);
             );
             out body;
             >;
@@ -132,12 +137,10 @@
 
         const overpassUrl = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(query);
 
-        // 4. Funzione di caricamento dati
+        // 4. Caricamento e categorizzazione dei dati
         fetch(overpassUrl)
         .then(response => {
-            if (!response.ok) {
-                throw new Error('Errore di rete dal server Overpass');
-            }
+            if (!response.ok) throw new Error('Errore di rete');
             return response.json();
         })
         .then(data => {
@@ -145,29 +148,45 @@
 
             L.geoJSON(geojson, {
                 style: function (feature) {
-                    const highway = feature.properties.highway;
-                    const color = (highway === 'cycleway') ? '#27ae60' : '#2980b9';
+                    const props = feature.properties;
+                    let color = '#27ae60'; // Default verde (pista ciclabile)
+                    let weight = 4;
+
+                    // Logica di differenziazione basata sui tag OSM
+                    if (props.highway === 'path' || props.highway === 'footway') {
+                        color = '#8e44ad'; // Viola per ciclopedonali
+                    } else if (props.cycleway || props['cycleway:left'] || props['cycleway:right']) {
+                        color = '#e67e22'; // Arancione per corsie su strada
+                    }
+
                     return {
                         color: color,
-                        weight: 4,
+                        weight: weight,
                         opacity: 0.85
                     };
                 },
                 onEachFeature: function (feature, layer) {
                     if (feature.properties) {
-                        let name = feature.properties.name || "Pista ciclabile / Percorso ciclabile";
+                        let name = feature.properties.name || "Infrastruttura ciclabile";
+                        let typeText = "Pista ciclabile";
+                        
+                        if (feature.properties.highway === 'path' || feature.properties.highway === 'footway') {
+                            typeText = "Percorso ciclopedonale";
+                        } else if (feature.properties.cycleway || feature.properties['cycleway:left'] || feature.properties['cycleway:right']) {
+                            typeText = "Corsia ciclabile su strada";
+                        }
+
                         let surface = feature.properties.surface ? `<br>Fondo: ${feature.properties.surface}` : '';
-                        layer.bindPopup(`<strong>${name}</strong>${surface}`);
+                        layer.bindPopup(`<strong>${name}</strong><br><em>Tipo: ${typeText}</em>${surface}`);
                     }
                 }
             }).addTo(map);
 
-            // Nasconde il messaggio di caricamento
             document.getElementById('loading').style.display = 'none';
         })
         .catch(error => {
-            console.error('Errore nel recupero dei dati:', error);
-            document.getElementById('loading').innerText = 'Errore durante il caricamento dei dati.';
+            console.error('Errore:', error);
+            document.getElementById('loading').innerText = 'Errore durante il caricamento.';
             document.getElementById('loading').style.color = '#c0392b';
         });
     </script>
