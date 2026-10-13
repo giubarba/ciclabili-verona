@@ -80,7 +80,7 @@
     <div id="sidebar">
         <div>
             <h1>Ciclabili Verona</h1>
-            <p>Mappa interattiva delle infrastrutture ciclabili della città. I dati sono estratti in tempo reale da <strong>OpenStreetMap</strong>, garantendo aggiornamenti costanti senza modifiche manuali.</p>
+            <p>Mappa interattiva delle infrastrutture ciclabili della città. I dati sono estratti in tempo reale da <strong>OpenStreetMap</strong>.</p>
             
             <div id="loading">Caricamento dati da OpenStreetMap...</div>
 
@@ -110,14 +110,13 @@
         // 1. Inizializzazione della mappa centrata su Verona
         const map = L.map('map').setView([45.4384, 10.9916], 14);
 
-        // 2. Aggiunta del layer grafico di base (CartoDB Positron per un look pulito)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{z}.png', {
+        // 2. Sfondo mappa basato su OpenStreetMap standard (libero e senza API Key)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // 3. Query Overpass API per l'area di Verona (bounding box approssimativo di Verona)
-        // Estrae tutte le strade che contengono tag legati alle biciclette
+        // 3. Query Overpass API per l'area di Verona
         const overpassUrl = 'https://overpass-api.de/api/interpreter';
         const query = `
             [out:json][timeout:25];
@@ -126,7 +125,6 @@
               way["cycleway"](45.38,10.90,45.49,11.05);
               way["cycleway:left"](45.38,10.90,45.49,11.05);
               way["cycleway:right"](45.38,10.90,45.49,11.05);
-              relation["route"~"bicycle"](45.38,10.90,45.49,11.05);
             );
             out body;
             >;
@@ -140,13 +138,10 @@
         })
         .then(response => response.json())
         .then(data => {
-            // Conversione dei dati OSM in formato GeoJSON standard
             const geojson = osmtogeojson(data);
 
-            // Aggiunta del layer GeoJSON alla mappa con personalizzazione grafica
             L.geoJSON(geojson, {
                 style: function (feature) {
-                    // Distinguiamo visivamente in base ai tag OSM se desiderato
                     const highway = feature.properties.highway;
                     const color = (highway === 'cycleway') ? '#27ae60' : '#2980b9';
                     return {
@@ -156,7 +151,6 @@
                     };
                 },
                 onEachFeature: function (feature, layer) {
-                    // Popup informativo al click sulla pista ciclabile
                     if (feature.properties) {
                         let name = feature.properties.name || "Pista ciclabile / Percorso ciclabile";
                         let surface = feature.properties.surface ? `<br>Fondo: ${feature.properties.surface}` : '';
@@ -165,7 +159,6 @@
                 }
             }).addTo(map);
 
-            // Rimuove il messaggio di caricamento
             document.getElementById('loading').style.display = 'none';
         })
         .catch(error => {
@@ -176,4 +169,3 @@
     </script>
 </body>
 </html>
-
