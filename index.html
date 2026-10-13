@@ -102,12 +102,78 @@
 
     <div id="map"></div>
 
-    <!-- Inclusione Leaflet JS e libreria di conversione OSM -> GeoJSON -->
+    <!-- Inclusione Leaflet JS e libreria originale osmtogeojson -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/osmtogeojson/3.0.0-beta.5/osmtogeojson.min.js"></script>
+    <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
 
     <script>
         // 1. Inizializzazione della mappa centrata su Verona
         const map = L.map('map').setView([45.4384, 10.9916], 14);
 
-        // 2. Sfondo mappa basato su OpenStreetMap standard (libero
+        // 2. Sfondo mappa basato su OpenStreetMap standard
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // 3. Query Overpass API per l'area di Verona
+        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+        const query = `
+            [out:json][timeout:25];
+            (
+              way["highway"~"cycleway"](45.38,10.90,45.49,11.05);
+              way["cycleway"](45.38,10.90,45.49,11.05);
+              way["cycleway:left"](45.38,10.90,45.49,11.05);
+              way["cycleway:right"](45.38,10.90,45.49,11.05);
+            );
+            out body;
+            >;
+            out skel qt;
+        `;
+
+        // 4. Funzione per caricare i dati (usando POST e URL-encoding)
+        fetch(overpassUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: "data=" + encodeURIComponent(query)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Errore HTTP dal server Overpass: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            const geojson = osmtogeojson(data);
+
+            L.geoJSON(geojson, {
+                style: function (feature) {
+                    const highway = feature.properties.highway;
+                    const color = (highway === 'cycleway') ? '#27ae60' : '#2980b9';
+                    return {
+                        color: color,
+                        weight: 4,
+                        opacity: 0.85
+                    };
+                },
+                onEachFeature: function (feature, layer) {
+                    if (feature.properties) {
+                        let name = feature.properties.name || "Pista ciclabile / Percorso ciclabile";
+                        let surface = feature.properties.surface ? `<br>Fondo: ${feature.properties.surface}` : '';
+                        layer.bindPopup(`<strong>${name}</strong>${surface}`);
+                    }
+                }
+            }).addTo(map);
+
+            document.getElementById('loading').style.display = 'none';
+        })
+        .catch(error => {
+            console.error('Errore nel recupero dei dati da OpenStreetMap:', error);
+            document.getElementById('loading').innerText = 'Errore durante il caricamento dei dati: ' + error.message;
+            document.getElementById('loading').style.color = '#c0392b';
+        });
+    </script>
+</body>
+</html>
