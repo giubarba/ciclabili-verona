@@ -53,13 +53,23 @@
         .legend-item {
             display: flex;
             align-items: center;
-            margin-bottom: 5px;
+            margin-bottom: 7px;
         }
         .legend-color {
             width: 20px;
             height: 4px;
             display: inline-block;
             margin-right: 8px;
+        }
+        .legend-point {
+            width: 10px;
+            height: 10px;
+            background: #e67e22;
+            border: 1px solid #d35400;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 13px;
+            margin-left: 5px;
         }
         #loading {
             font-weight: bold;
@@ -87,10 +97,13 @@
             <div class="legend">
                 <strong>Legenda Infrastrutture</strong>
                 <div class="legend-item" style="margin-top: 8px;">
-                    <span class="legend-color" style="background: #27ae60;"></span> Pista Ciclabile / Corsia
+                    <span class="legend-color" style="background: #27ae60;"></span> Pista Ciclabile (sede propria)
                 </div>
                 <div class="legend-item">
-                    <span class="legend-color" style="background: #2980b9;"></span> Percorso promiscuo / Altro
+                    <span class="legend-color" style="background: #2980b9;"></span> Percorso promiscuo / Corsia
+                </div>
+                <div class="legend-item">
+                    <span class="legend-point"></span> Parcheggio (ancoraggio telaio)
                 </div>
             </div>
         </div>
@@ -110,30 +123,42 @@
         // 1. Inizializzazione della mappa centrata su Verona
         const map = L.map('map').setView([45.4384, 10.9916], 14);
 
-        // 2. Sfondo mappa basato su OpenStreetMap standard
+        // 2. Sfondo mappa
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // 3. Endpoint alternativo spesso più veloce per le query pesanti
+        // 3. Endpoint e Query Overpass estesa
         const overpassUrl = 'https://lz4.overpass-api.de/api/interpreter';
         
-        // Timeout aumentato a 90 secondi
         const query = `
             [out:json][timeout:90];
             (
+              // Ciclabili classiche e corsie
               way["highway"~"cycleway"](45.38,10.90,45.49,11.05);
               way["cycleway"](45.38,10.90,45.49,11.05);
+              way["cycleway:both"](45.38,10.90,45.49,11.05);
               way["cycleway:left"](45.38,10.90,45.49,11.05);
               way["cycleway:right"](45.38,10.90,45.49,11.05);
+              
+              // Ciclopedonali e percorsi condivisi
+              way["highway"~"path|footway|pedestrian"]["bicycle"="designated"](45.38,10.90,45.49,11.05);
+              
+              // Strade ciclabili e a priorità
+              way["bicycle_road"="yes"](45.38,10.90,45.49,11.05);
+              way["cyclestreet"="yes"](45.38,10.90,45.49,11.05);
+
+              // Parcheggi bici con archetti (stands) per legare il telaio
+              node["amenity"="bicycle_parking"]["bicycle_parking"="stands"](45.38,10.90,45.49,11.05);
+              way["amenity"="bicycle_parking"]["bicycle_parking"="stands"](45.38,10.90,45.49,11.05);
             );
             out body;
             >;
             out skel qt;
         `;
 
-        // 4. Funzione per caricare i dati
+        // 4. Fetch e renderizzazione
         fetch(overpassUrl, {
             method: 'POST',
             headers: {
@@ -151,20 +176,49 @@
             const geojson = osmtogeojson(data);
 
             L.geoJSON(geojson, {
-                style: function (feature) {
-                    const highway = feature.properties.highway;
-                    const color = (highway === 'cycleway') ? '#27ae60' : '#2980b9';
-                    return {
-                        color: color,
-                        weight: 4,
-                        opacity: 0.85
-                    };
+                // Come disegnare i punti (parcheggi bici)
+                pointToLayer: function (feature, latlng) {
+                    if (feature.properties.amenity === 'bicycle_parking') {
+                        return L.circleMarker(latlng, {
+                            radius: 5,
+                            fillColor: "#e67e22",
+                            color: "#d35400",
+                            weight: 1,
+                            opacity: 1,
+                            fillOpacity: 0.9
+                        });
+                    }
+                    return L.marker(latlng);
                 },
+                
+                // Come disegnare le linee (infrastrutture)
+                style: function (feature) {
+                    if (feature.geometry && (feature.geometry.type === 'LineString' || feature.geometry.type === 'MultiLineString')) {
+                        const props = feature.properties;
+                        // Verde per ciclabili esclusive, blu per il resto
+                        const isExclusive = props.highway === 'cycleway';
+                        const color = isExclusive ? '#27ae60' : '#2980b9';
+                        
+                        return {
+                            color: color,
+                            weight: 4,
+                            opacity: 0.85
+                        };
+                    }
+                },
+                
+                // Contenuto dei popup
                 onEachFeature: function (feature, layer) {
                     if (feature.properties) {
-                        let name = feature.properties.name || "Pista ciclabile / Percorso ciclabile";
-                        let surface = feature.properties.surface ? `<br>Fondo: ${feature.properties.surface}` : '';
-                        layer.bindPopup(`<strong>${name}</strong>${surface}`);
+                        if (feature.properties.amenity === 'bicycle_parking') {
+                            let capacity = feature.properties.capacity ? `<br>Capacità: ${feature.properties.capacity} posti` : '';
+                            let covered = feature.properties.covered === 'yes' ? '<br>Coperto: Sì' : '';
+                            layer.bindPopup(`<strong>Parcheggio Bici (Archetti)</strong>${capacity}${covered}`);
+                        } else {
+                            let name = feature.properties.name || "Percorso Ciclabile";
+                            let surface = feature.properties.surface ? `<br>Fondo: ${feature.properties.surface}` : '';
+                            layer.bindPopup(`<strong>${name}</strong>${surface}`);
+                        }
                     }
                 }
             }).addTo(map);
