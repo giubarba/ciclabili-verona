@@ -110,14 +110,13 @@
         // 1. Inizializzazione della mappa centrata su Verona
         const map = L.map('map').setView([45.4384, 10.9916], 14);
 
-        // 2. Sfondo mappa basato su OpenStreetMap standard (libero e senza API Key)
+        // 2. Sfondo mappa OpenStreetMap standard
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // 3. Query Overpass API per l'area di Verona
-        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+        // 3. Query Overpass ottimizzata passata via GET a un server mirror affidabile
         const query = `
             [out:json][timeout:25];
             (
@@ -131,12 +130,16 @@
             out skel qt;
         `;
 
-        // 4. Funzione per caricare i dati e renderizzarli sulla mappa
-        fetch(overpassUrl, {
-            method: 'POST',
-            body: query
+        const overpassUrl = 'https://overpass.kumi.systems/api/interpreter?data=' + encodeURIComponent(query);
+
+        // 4. Funzione di caricamento dati
+        fetch(overpassUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Errore di rete dal server Overpass');
+            }
+            return response.json();
         })
-        .then(response => response.json())
         .then(data => {
             const geojson = osmtogeojson(data);
 
@@ -159,10 +162,11 @@
                 }
             }).addTo(map);
 
+            // Nasconde il messaggio di caricamento
             document.getElementById('loading').style.display = 'none';
         })
         .catch(error => {
-            console.error('Errore nel recupero dei dati da OpenStreetMap:', error);
+            console.error('Errore nel recupero dei dati:', error);
             document.getElementById('loading').innerText = 'Errore durante il caricamento dei dati.';
             document.getElementById('loading').style.color = '#c0392b';
         });
