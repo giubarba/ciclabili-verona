@@ -102,7 +102,7 @@
 
     <div id="map"></div>
 
-    <!-- Inclusione Leaflet JS e libreria originale osmtogeojson -->
+    <!-- Inclusione Leaflet JS e libreria osmtogeojson -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="https://unpkg.com/osmtogeojson@3.0.0-beta.5/osmtogeojson.js"></script>
 
@@ -116,10 +116,12 @@
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }).addTo(map);
 
-        // 3. Query Overpass API per l'area di Verona
-        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+        // 3. Endpoint alternativo spesso più veloce per le query pesanti
+        const overpassUrl = 'https://lz4.overpass-api.de/api/interpreter';
+        
+        // Timeout aumentato a 90 secondi
         const query = `
-            [out:json][timeout:25];
+            [out:json][timeout:90];
             (
               way["highway"~"cycleway"](45.38,10.90,45.49,11.05);
               way["cycleway"](45.38,10.90,45.49,11.05);
@@ -131,7 +133,7 @@
             out skel qt;
         `;
 
-        // 4. Funzione per caricare i dati (usando POST e URL-encoding)
+        // 4. Funzione per caricare i dati
         fetch(overpassUrl, {
             method: 'POST',
             headers: {
